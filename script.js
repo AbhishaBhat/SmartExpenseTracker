@@ -76,7 +76,8 @@ function setUser(user) {
 
 function formatCurrency(n) {
 	const amount = isNaN(n) ? 0 : Number(n);
-	return amount.toLocaleString(undefined, { style: 'currency', currency: 'USD', minimumFractionDigits: 2 });
+	const formatted = amount.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+	return `Rs ${formatted}`;
 }
 
 function parseAmount(input) {
