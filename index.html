@@ -1,0 +1,258 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Smart Expense Tracker</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="styles.css">
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+</head>
+<body>
+    
+    
+    <!-- Landing Page -->
+    <div id="landing-page" class="page active">
+        <div class="animated-background">
+            <div class="gradient-overlay"></div>
+            <div class="floating-shapes">
+                <div class="shape shape-1"></div>
+                <div class="shape shape-2"></div>
+                <div class="shape shape-3"></div>
+                <div class="shape shape-4"></div>
+                <div class="shape shape-5"></div>
+            </div>
+        </div>
+        
+        <div class="landing-content">
+            <h1 class="main-title">Smart Expense Tracker</h1>
+            <p class="subtitle">Take control of your finances with smart insights</p>
+            
+            <div class="quote-container">
+                <div class="quote-text" id="rotating-quote">
+                    "Save today, secure tomorrow"
+                </div>
+            </div>
+            
+            <button class="enter-app-btn" onclick="navigateToDashboard()">
+                <span>Enter App</span>
+                <div class="btn-glow"></div>
+            </button>
+        </div>
+    </div>
+
+    <!-- Home Dashboard -->
+    <div id="dashboard-page" class="page">
+        <header class="dashboard-header" id="top-of-dashboard">
+            <h1>Smart Expense Tracker</h1>
+            <button class="back-to-landing" onclick="navigateToLanding()">
+                <span>← Back</span>
+            </button>
+        </header>
+
+        <div class="dashboard-hero">
+            <div class="hero-text">
+                <h2>Welcome back</h2>
+                <p id="hero-date">Make today a financially smart day.</p>
+            </div>
+        </div>
+
+        <!-- User Details Section -->
+        <section class="user-details-section">
+            <h2>Personal Information</h2>
+            <div class="user-form">
+                <div class="form-group">
+                    <input type="text" id="user-name" placeholder="Full Name" required>
+                </div>
+                <div class="form-group">
+                    <input type="email" id="user-email" placeholder="Email Address" required>
+                </div>
+                <div class="form-group">
+                    <input type="tel" id="user-contact" placeholder="Contact Number">
+                </div>
+                <div class="form-group">
+                    <textarea id="user-address" placeholder="Address"></textarea>
+                </div>
+                <button class="save-user-btn" onclick="saveUserDetails()">Save Details</button>
+            </div>
+        </section>
+
+        <!-- Navigation Tabs -->
+        <nav class="dashboard-nav">
+            <button class="nav-tab active" data-tab="earnings">💰 Earnings</button>
+            <button class="nav-tab" data-tab="spendings">💸 Spendings</button>
+            <button class="nav-tab" data-tab="balance">⚖️ Balance</button>
+            <button class="nav-tab" data-tab="insights">📊 Insights</button>
+            <button class="nav-tab" data-tab="history">📅 History</button>
+        </nav>
+
+        <!-- Tab Content -->
+        <div class="tab-content">
+            <!-- Earnings Tab -->
+            <div id="earnings-tab" class="tab-pane active">
+                <div class="tab-header">
+                    <h2>Add Earnings</h2>
+                    <button class="add-btn" onclick="showAddEarningsModal()">+ Add Income</button>
+                </div>
+                <div class="earnings-list" id="earnings-list">
+                    <!-- Earnings will be populated here -->
+                </div>
+            </div>
+
+            <!-- Spendings Tab -->
+            <div id="spendings-tab" class="tab-pane">
+                <div class="tab-header">
+                    <h2>Add Expenses</h2>
+                    <button class="add-btn" onclick="showAddSpendingsModal()">+ Add Expense</button>
+                </div>
+                <div class="spendings-list" id="spendings-list">
+                    <!-- Spendings will be populated here -->
+                </div>
+            </div>
+
+            <!-- Balance Tab -->
+            <div id="balance-tab" class="tab-pane">
+                <div class="balance-summary">
+                    <div class="balance-card total-earnings">
+                        <h3>Total Earnings</h3>
+                        <div class="amount" id="total-earnings">$0.00</div>
+                    </div>
+                    <div class="balance-card total-spendings">
+                        <h3>Total Spendings</h3>
+                        <div class="amount" id="total-spendings">$0.00</div>
+                    </div>
+                    <div class="balance-card current-balance">
+                        <h3>Current Balance</h3>
+                        <div class="amount" id="current-balance">$0.00</div>
+                    </div>
+                </div>
+                
+                <!-- Charts Section -->
+                <div class="charts-section">
+                    <div class="chart-container">
+                        <h3>Spending by Category</h3>
+                        <canvas id="spending-pie-chart"></canvas>
+                    </div>
+                    <div class="chart-container">
+                        <h3>Balance Trend</h3>
+                        <canvas id="balance-line-chart"></canvas>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Insights Tab -->
+            <div id="insights-tab" class="tab-pane">
+                <div class="insights-header">
+                    <h2>Smart Insights</h2>
+                    <div class="filter-controls">
+                        <button class="filter-btn active" data-period="7">Last 7 Days</button>
+                        <button class="filter-btn" data-period="30">Last Month</button>
+                        <button class="filter-btn" data-period="60">Last 2 Months</button>
+                    </div>
+                </div>
+                
+                <div class="insights-content">
+                    <div class="warning-box" id="warning-box" style="display: none;">
+                        <h3>⚠️ Spending Alert</h3>
+                        <p id="warning-message"></p>
+                        <div class="saving-tips">
+                            <h4>Saving Tips:</h4>
+                            <ul id="saving-tips-list">
+                                <!-- Tips will be populated here -->
+                            </ul>
+                        </div>
+                    </div>
+                    
+                    <div class="motivational-tip">
+                        <h3>💡 Daily Finance Tip</h3>
+                        <p id="daily-tip">Track every penny - small expenses add up quickly!</p>
+                    </div>
+                </div>
+            </div>
+
+            <!-- History Tab -->
+            <div id="history-tab" class="tab-pane">
+                <div class="history-header">
+                    <h2>Monthly History</h2>
+                    <button class="reset-btn" onclick="resetCurrentMonth()">Reset Current Month</button>
+                </div>
+                <div class="history-list" id="history-list">
+                    <!-- History will be populated here -->
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Add Earnings Modal -->
+    <div id="earnings-modal" class="modal">
+        <div class="modal-content">
+            <span class="close" onclick="closeModal('earnings-modal')">&times;</span>
+            <h2>Add New Income</h2>
+            <form id="earnings-form">
+                <div class="form-group">
+                    <label for="income-source">Income Source</label>
+                    <input type="text" id="income-source" placeholder="e.g., Salary, Freelance, Bonus" required>
+                </div>
+                <div class="form-group">
+                    <label for="income-amount">Amount ($)</label>
+                    <input type="number" id="income-amount" step="0.01" min="0" placeholder="0.00" required>
+                </div>
+                <div class="form-group">
+                    <label for="income-date">Date</label>
+                    <input type="date" id="income-date" required>
+                </div>
+                <div class="form-group">
+                    <label for="income-notes">Notes (Optional)</label>
+                    <textarea id="income-notes" placeholder="Additional details..."></textarea>
+                </div>
+                <button type="submit" class="submit-btn">Add Income</button>
+            </form>
+        </div>
+    </div>
+
+    <!-- Add Spendings Modal -->
+    <div id="spendings-modal" class="modal">
+        <div class="modal-content">
+            <span class="close" onclick="closeModal('spendings-modal')">&times;</span>
+            <h2>Add New Expense</h2>
+            <form id="spendings-form">
+                <div class="form-group">
+                    <label for="expense-category">Category</label>
+                    <select id="expense-category" required>
+                        <option value="">Select Category</option>
+                        <option value="Food">Food & Dining</option>
+                        <option value="Travel">Travel & Transport</option>
+                        <option value="Entertainment">Entertainment</option>
+                        <option value="Bills">Bills & Utilities</option>
+                        <option value="Shopping">Shopping</option>
+                        <option value="Health">Health & Medical</option>
+                        <option value="Education">Education</option>
+                        <option value="Other">Other</option>
+                    </select>
+                </div>
+                <div class="form-group">
+                    <label for="expense-amount">Amount ($)</label>
+                    <input type="number" id="expense-amount" step="0.01" min="0" placeholder="0.00" required>
+                </div>
+                <div class="form-group">
+                    <label for="expense-date">Date</label>
+                    <input type="date" id="expense-date" required>
+                </div>
+                <div class="form-group">
+                    <label for="expense-description">Description</label>
+                    <input type="text" id="expense-description" placeholder="What did you spend on?" required>
+                </div>
+                <div class="form-group">
+                    <label for="expense-notes">Notes (Optional)</label>
+                    <textarea id="expense-notes" placeholder="Additional details..."></textarea>
+                </div>
+                <button type="submit" class="submit-btn">Add Expense</button>
+            </form>
+        </div>
+    </div>
+
+    <script src="script.js"></script>
+</body>
+</html>
