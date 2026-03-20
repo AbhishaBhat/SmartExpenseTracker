@@ -64,14 +64,21 @@ body {
     opacity: 1;
 }
 
+#auth-page.page.active {
+    display: flex;
+}
+
 /* Landing Page Styles */
 #landing-page {
     position: relative;
-    display: flex;
     align-items: flex-start;
     justify-content: center;
     text-align: center;
     padding-top: 3rem;
+}
+
+#landing-page.page.active {
+    display: flex;
 }
 
 .animated-background {
@@ -630,6 +637,10 @@ body {
 @keyframes modalFadeIn {
     from { opacity: 0; }
     to { opacity: 1; }
+}
+
+.modal.active {
+    display: block;
 }
 
 .modal-content {

@@ -1,566 +1,565 @@
-// Smart Expense Tracker - Vanilla JS
+// --- STATE & CONFIG ---
+const API_BASE = 'http://localhost:5001/api';
+let token = localStorage.getItem('token');
+let isLoginMode = true;
 
-// Constants and State
-const QUOTES = [
-	"Save today, secure tomorrow.",
-	"Balance is wealth.",
-	"Track small expenses—they add up.",
-	"A budget is telling your money where to go.",
-	"Invest in your future self.",
-	"Spend less than you earn.",
-	"Small savings grow into big opportunities."
-];
+// Pagination state
+let currentSpendingPage = 1;
+let totalSpendingPages = 1;
 
-const DAILY_TIPS = [
-	"Automate a transfer to savings each payday.",
-	"Make coffee at home this week.",
-	"Unsubscribe from one unused service.",
-	"Do a no-spend day challenge.",
-	"Plan meals to avoid takeout.",
-	"Track every purchase today.",
-	"Review and cancel one recurring charge."
-];
-
-const SAVING_TIPS = [
-	"Cut down on eating out this week.",
-	"Save at least 20% of income.",
-	"Track small daily expenses—they add up.",
-	"Plan your purchases; avoid impulse buying.",
-	"Use public transport or carpool when possible.",
-	"Set weekly spending limits per category."
-];
-
-const STORAGE_KEYS = {
-	user: 'set_user',
-	currentMonthKey: 'set_currentMonthKey',
-	history: 'set_history'
+let state = {
+    earnings: [],
+    spendings: [], // All spendings for charts
+    paginatedSpendings: [], // Current page spendings for list
+    user: null
 };
 
-let spendingPieChart = null;
-let balanceLineChart = null;
-
-// Utilities
-function getCurrentMonthKey(date = new Date()) {
-	const y = date.getFullYear();
-	const m = String(date.getMonth() + 1).padStart(2, '0');
-	return `${y}-${m}`;
+// --- UTILS ---
+function formatCurrency(amount) {
+    return new Intl.NumberFormat('en-IN', { style: 'currency', currency: 'INR' }).format(amount);
+}
+function formatDate(dateStr) {
+    return new Intl.DateTimeFormat('en-IN', { year: 'numeric', month: 'short', day: 'numeric' }).format(new Date(dateStr));
+}
+function escapeHtml(unsafe) {
+    if (!unsafe) return '';
+    return unsafe.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+}
+function getAuthHeaders() {
+    return {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${token}`
+    };
 }
 
-function getMonthData(monthKey) {
-	const key = `set_data_${monthKey}`;
-	const data = localStorage.getItem(key);
-	if (data) return JSON.parse(data);
-	return { earnings: [], spendings: [], createdAt: new Date().toISOString() };
+// --- AUTH LOGIC ---
+async function checkAuth() {
+    if (!token) {
+        showAuthPage();
+        return;
+    }
+    try {
+        const res = await fetch(`${API_BASE}/auth/me`, { headers: getAuthHeaders() });
+        if (res.ok) {
+            state.user = await res.json();
+            showDashboard();
+            await fetchAllData();
+        } else {
+            logout();
+        }
+    } catch (e) {
+        logout();
+    }
 }
 
-function setMonthData(monthKey, data) {
-	const key = `set_data_${monthKey}`;
-	localStorage.setItem(key, JSON.stringify(data));
+function showAuthPage() {
+    document.getElementById('landing-page').classList.remove('active');
+    document.getElementById('dashboard-page').classList.remove('active');
+    document.getElementById('auth-page').classList.add('active');
 }
 
-function getHistory() {
-	return JSON.parse(localStorage.getItem(STORAGE_KEYS.history) || '[]');
+function showDashboard() {
+    document.getElementById('landing-page').classList.remove('active');
+    document.getElementById('auth-page').classList.remove('active');
+    document.getElementById('dashboard-page').classList.add('active');
+    if (state.user) {
+        document.getElementById('user-name').value = state.user.name || '';
+        document.getElementById('user-email').value = state.user.email || '';
+        document.getElementById('hero-date').innerText = `Make today a financially smart day, ${state.user.name.split(' ')[0]}!`;
+    }
 }
 
-function setHistory(history) {
-	localStorage.setItem(STORAGE_KEYS.history, JSON.stringify(history));
+function navigateToDashboard() {
+    // Fired from Landing page "Enter App"
+    checkAuth();
 }
 
-function getUser() {
-	return JSON.parse(localStorage.getItem(STORAGE_KEYS.user) || '{}');
+function navigateToLanding() {
+    document.querySelectorAll('.page').forEach(p => p.classList.remove('active'));
+    document.getElementById('landing-page').classList.add('active');
 }
 
-function setUser(user) {
-	localStorage.setItem(STORAGE_KEYS.user, JSON.stringify(user));
+function toggleAuthMode() {
+    isLoginMode = !isLoginMode;
+    document.getElementById('auth-title').innerText = isLoginMode ? 'Welcome Back' : 'Create Account';
+    document.getElementById('name-group').style.display = isLoginMode ? 'none' : 'block';
+    if (!isLoginMode) document.getElementById('auth-name').setAttribute('required', 'true');
+    else document.getElementById('auth-name').removeAttribute('required');
+    document.getElementById('auth-btn').innerText = isLoginMode ? 'Log In' : 'Sign Up';
+    document.getElementById('auth-toggle-text').innerText = isLoginMode ? "Don't have an account?" : "Already have an account?";
+    document.querySelector('#auth-page a').innerText = isLoginMode ? 'Sign up' : 'Log in';
 }
 
-function formatCurrency(n) {
-	const amount = isNaN(n) ? 0 : Number(n);
-	const formatted = amount.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
-	return `Rs ${formatted}`;
+async function handleAuth(e) {
+    e.preventDefault();
+    const email = document.getElementById('auth-email').value.trim();
+    const password = document.getElementById('auth-password').value.trim();
+    const name = document.getElementById('auth-name').value.trim();
+    
+    const endpoint = isLoginMode ? '/auth/login' : '/auth/register';
+    const body = isLoginMode ? { email, password } : { name, email, password };
+
+    try {
+        const res = await fetch(`${API_BASE}${endpoint}`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(body)
+        });
+        const data = await res.json();
+        
+        if (res.ok) {
+            token = data.token;
+            localStorage.setItem('token', token);
+            state.user = data.user;
+            showDashboard();
+            await fetchAllData();
+        } else {
+            alert(data.error || 'Authentication failed');
+        }
+    } catch (e) {
+        alert('Cannot connect to server.');
+    }
 }
 
-function parseAmount(input) {
-	const v = Number(input);
-	return isNaN(v) ? 0 : v;
+function logout() {
+    token = null;
+    localStorage.removeItem('token');
+    state = { earnings: [], spendings: [], paginatedSpendings: [], user: null };
+    showAuthPage();
 }
 
-// Initial Setup and Rollover
-function ensureMonthInitialized() {
-	const nowKey = getCurrentMonthKey();
-	let currentKey = localStorage.getItem(STORAGE_KEYS.currentMonthKey);
-	if (!currentKey) {
-		localStorage.setItem(STORAGE_KEYS.currentMonthKey, nowKey);
-		setMonthData(nowKey, getMonthData(nowKey));
-		return;
-	}
-	if (currentKey !== nowKey) {
-		// Rollover: archive old month to history and start new month
-		const oldData = getMonthData(currentKey);
-		const totals = computeTotals(oldData);
-		const history = getHistory();
-		history.unshift({ monthKey: currentKey, totals, earnings: oldData.earnings, spendings: oldData.spendings });
-		setHistory(history);
-		// Clear old month and set new month
-		setMonthData(currentKey, { earnings: [], spendings: [], createdAt: new Date().toISOString() });
-		localStorage.setItem(STORAGE_KEYS.currentMonthKey, nowKey);
-		setMonthData(nowKey, getMonthData(nowKey));
-	}
+// --- DATA FETCHING ---
+async function fetchAllData() {
+    try {
+        const [earnRes, allSpendRes] = await Promise.all([
+            fetch(`${API_BASE}/earnings`, { headers: getAuthHeaders() }),
+            fetch(`${API_BASE}/spendings?limit=10000`, { headers: getAuthHeaders() }) // For charts
+        ]);
+        
+        if (earnRes.ok) state.earnings = await earnRes.json();
+        if (allSpendRes.ok) {
+            const data = await allSpendRes.json();
+            state.spendings = data.spendings;
+        }
+
+        await fetchSpendings(1); // Fetch paginated list
+        updateGlobalUI();
+    } catch (err) {
+        console.error("Error fetching data:", err);
+    }
 }
 
-// Compute helpers
-function computeTotals(monthData) {
-	const totalEarnings = monthData.earnings.reduce((s, e) => s + parseAmount(e.amount), 0);
-	const totalSpendings = monthData.spendings.reduce((s, e) => s + parseAmount(e.amount), 0);
-	return { earnings: totalEarnings, spendings: totalSpendings, balance: totalEarnings - totalSpendings };
+let searchTimeout;
+function debouncedSearch() {
+    clearTimeout(searchTimeout);
+    searchTimeout = setTimeout(() => fetchSpendings(1), 300);
 }
 
-function filterByDays(items, days) {
-	const now = new Date();
-	const start = new Date(now);
-	start.setDate(now.getDate() - days + 1);
-	return items.filter(i => new Date(i.date) >= start && new Date(i.date) <= now);
+async function fetchSpendings(page) {
+    const category = document.getElementById('filter-category').value;
+    const search = document.getElementById('search-spendings').value;
+    
+    try {
+        const res = await fetch(`${API_BASE}/spendings?page=${page}&limit=10&category=${encodeURIComponent(category)}&search=${encodeURIComponent(search)}`, {
+            headers: getAuthHeaders()
+        });
+        if (res.ok) {
+            const data = await res.json();
+            state.paginatedSpendings = data.spendings;
+            currentSpendingPage = data.currentPage;
+            totalSpendingPages = data.totalPages;
+            
+            renderSpendingsList();
+            updatePaginationUI();
+        }
+    } catch (err) {
+        console.error("Error fetching paginated spendings", err);
+    }
 }
 
-// DOM helpers
-function $(selector) { return document.querySelector(selector); }
-function $all(selector) { return Array.from(document.querySelectorAll(selector)); }
-
-// Navigation
-function showPage(idToShow) {
-	$all('.page').forEach(p => p.classList.remove('active'));
-	$(idToShow).classList.add('active');
-	window.scrollTo({ top: 0, behavior: 'smooth' });
+function changePage(delta) {
+    const newPage = currentSpendingPage + delta;
+    if (newPage >= 1 && newPage <= totalSpendingPages) {
+        fetchSpendings(newPage);
+    }
 }
 
-window.navigateToDashboard = function navigateToDashboard() {
-	// Activate dashboard
-	showPage('#dashboard-page');
-	// Remove landing page entirely to avoid any fixed/overlay leftovers
-	const landing = document.getElementById('landing-page');
-	if (landing) {
-		landing.parentNode && landing.parentNode.removeChild(landing);
-	}
-	// Force snap to the dashboard header
-	const anchor = document.getElementById('top-of-dashboard');
-	const prevScrollBehavior = document.documentElement.style.scrollBehavior;
-	document.documentElement.style.scrollBehavior = 'auto';
-	if (anchor) {
-		anchor.scrollIntoView({ behavior: 'auto', block: 'start' });
-	}
-	window.scrollTo(0, 0);
-	document.documentElement.scrollTop = 0;
-	document.body.scrollTop = 0;
-	setTimeout(() => {
-		window.scrollTo(0, 0);
-		document.documentElement.scrollTop = 0;
-		document.body.scrollTop = 0;
-		document.documentElement.style.scrollBehavior = prevScrollBehavior || '';
-	}, 0);
-	// Set hero date
-	const heroDate = document.getElementById('hero-date');
-	if (heroDate) {
-		const d = new Date();
-		heroDate.textContent = d.toLocaleDateString(undefined, { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' });
-	}
-};
-
-window.navigateToLanding = function navigateToLanding() {
-	showPage('#landing-page');
-};
-
-// Tabs
-function initTabs() {
-	const tabButtons = $all('.nav-tab');
-	tabButtons.forEach(btn => {
-		btn.addEventListener('click', () => {
-			tabButtons.forEach(b => b.classList.remove('active'));
-			btn.classList.add('active');
-			const target = btn.getAttribute('data-tab');
-			$all('.tab-pane').forEach(p => p.classList.remove('active'));
-			const pane = document.getElementById(`${target}-tab`);
-			if (pane) pane.classList.add('active');
-			if (target === 'balance') {
-				renderCharts();
-			}
-		});
-	});
+function updatePaginationUI() {
+    document.getElementById('page-info').innerText = `Page ${currentSpendingPage} of ${totalSpendingPages || 1}`;
+    document.getElementById('prev-btn').disabled = currentSpendingPage <= 1;
+    document.getElementById('next-btn').disabled = currentSpendingPage >= totalSpendingPages;
+    document.getElementById('prev-btn').style.opacity = currentSpendingPage <= 1 ? "0.5" : "1";
+    document.getElementById('next-btn').style.opacity = currentSpendingPage >= totalSpendingPages ? "0.5" : "1";
 }
 
-// User details
-function loadUserDetails() {
-	const user = getUser();
-	$('#user-name').value = user.name || '';
-	$('#user-email').value = user.email || '';
-	$('#user-contact').value = user.contact || '';
-	$('#user-address').value = user.address || '';
+// --- CRUD OPERATIONS ---
+async function onSubmitEarnings(e) {
+    e.preventDefault();
+    const submitBtn = e.target.querySelector('button[type="submit"]');
+    submitBtn.disabled = true;
+    submitBtn.innerText = 'Saving...';
+
+    const newEarning = {
+        source: document.getElementById('income-source').value,
+        amount: parseFloat(document.getElementById('income-amount').value),
+        date: document.getElementById('income-date').value,
+        notes: document.getElementById('income-notes').value
+    };
+
+    try {
+        const res = await fetch(`${API_BASE}/earnings`, {
+            method: 'POST',
+            headers: getAuthHeaders(),
+            body: JSON.stringify(newEarning)
+        });
+        if (res.ok) {
+            await fetchAllData();
+            closeModal('earnings-modal');
+            e.target.reset();
+        }
+    } catch (err) {
+        console.error(err);
+    } finally {
+        submitBtn.disabled = false;
+        submitBtn.innerText = 'Add Income';
+    }
 }
 
-window.saveUserDetails = function saveUserDetails() {
-	const user = {
-		name: $('#user-name').value.trim(),
-		email: $('#user-email').value.trim(),
-		contact: $('#user-contact').value.trim(),
-		address: $('#user-address').value.trim()
-	};
-	setUser(user);
-	toast('Saved user details');
-};
+async function deleteEarning(id) {
+    if (!confirm('Are you sure you want to delete this specific earning log?')) return;
+    try {
+        const res = await fetch(`${API_BASE}/earnings/${id}`, { method: 'DELETE', headers: getAuthHeaders() });
+        if (res.ok) fetchAllData();
+    } catch (err) { console.error(err); }
+}
 
-// Earnings
-window.showAddEarningsModal = function showAddEarningsModal() { openModal('earnings-modal'); };
+async function onSubmitSpendings(e) {
+    e.preventDefault();
+    const submitBtn = e.target.querySelector('button[type="submit"]');
+    submitBtn.disabled = true;
+    submitBtn.innerText = 'Saving...';
 
-function onSubmitEarnings(e) {
-	e.preventDefault();
-	const monthKey = localStorage.getItem(STORAGE_KEYS.currentMonthKey);
-	const data = getMonthData(monthKey);
-	const item = {
-		id: crypto.randomUUID(),
-		source: $('#income-source').value.trim(),
-		amount: parseAmount($('#income-amount').value),
-		date: $('#income-date').value || new Date().toISOString().slice(0,10),
-		notes: $('#income-notes').value.trim()
-	};
-	if (!item.source || item.amount <= 0) return;
-	data.earnings.unshift(item);
-	setMonthData(monthKey, data);
-	closeModal('earnings-modal');
-	$('#earnings-form').reset();
-	renderAll();
-	toast('Income added');
+    const newSpending = {
+        category: document.getElementById('expense-category').value,
+        amount: parseFloat(document.getElementById('expense-amount').value),
+        date: document.getElementById('expense-date').value,
+        description: document.getElementById('expense-description').value,
+        notes: document.getElementById('expense-notes').value
+    };
+
+    try {
+        const res = await fetch(`${API_BASE}/spendings`, {
+            method: 'POST',
+            headers: getAuthHeaders(),
+            body: JSON.stringify(newSpending)
+        });
+        if (res.ok) {
+            await fetchAllData();
+            closeModal('spendings-modal');
+            e.target.reset();
+        }
+    } catch (err) {
+        console.error(err);
+    } finally {
+        submitBtn.disabled = false;
+        submitBtn.innerText = 'Add Expense';
+    }
+}
+
+async function deleteSpending(id) {
+    if (!confirm('Are you sure you want to delete this specific spending log?')) return;
+    try {
+        const res = await fetch(`${API_BASE}/spendings/${id}`, { method: 'DELETE', headers: getAuthHeaders() });
+        if (res.ok) fetchAllData();
+    } catch (err) { console.error(err); }
+}
+
+async function saveUserDetails() {
+    const btn = document.querySelector('.save-user-btn');
+    btn.innerText = 'Saved!';
+    setTimeout(() => btn.innerText = 'Save Details', 2000);
+}
+
+// --- RENDERING ---
+function updateGlobalUI() {
+    renderEarningsList();
+    renderCharts();
+    updateBalanceAndInsights();
 }
 
 function renderEarningsList() {
-	const list = $('#earnings-list');
-	const monthKey = localStorage.getItem(STORAGE_KEYS.currentMonthKey);
-	const data = getMonthData(monthKey);
-	if (!data.earnings.length) {
-		list.innerHTML = '<p style="opacity:.8">No earnings yet.</p>';
-		return;
-	}
-	list.innerHTML = data.earnings.map(e => `
-		<div class="earnings-item" data-id="${e.id}">
-			<div class="item-info">
-				<h4>${escapeHtml(e.source)}</h4>
-				<p>${escapeHtml(e.date)} ${e.notes ? '· ' + escapeHtml(e.notes) : ''}</p>
-			</div>
-			<div style="display:flex;align-items:center;gap:.5rem">
-				<div class="item-amount">${formatCurrency(e.amount)}</div>
-				<button class="delete-btn" onclick="deleteEarning('${e.id}')">Delete</button>
-			</div>
-		</div>
-	`).join('');
-}
+    const list = document.getElementById('earnings-list');
+    if (!list) return;
 
-window.deleteEarning = function deleteEarning(id) {
-	const monthKey = localStorage.getItem(STORAGE_KEYS.currentMonthKey);
-	const data = getMonthData(monthKey);
-	data.earnings = data.earnings.filter(e => e.id !== id);
-	setMonthData(monthKey, data);
-	renderAll();
-	toast('Income removed');
-};
+    if (state.earnings.length === 0) {
+        list.innerHTML = `<div class="empty-state">No earnings added yet. Start by adding your incomes!</div>`;
+        return;
+    }
 
-// Spendings
-window.showAddSpendingsModal = function showAddSpendingsModal() { openModal('spendings-modal'); };
-
-function onSubmitSpendings(e) {
-	e.preventDefault();
-	const monthKey = localStorage.getItem(STORAGE_KEYS.currentMonthKey);
-	const data = getMonthData(monthKey);
-	const item = {
-		id: crypto.randomUUID(),
-		category: $('#expense-category').value,
-		amount: parseAmount($('#expense-amount').value),
-		date: $('#expense-date').value || new Date().toISOString().slice(0,10),
-		description: $('#expense-description').value.trim(),
-		notes: $('#expense-notes').value.trim()
-	};
-	if (!item.category || !item.description || item.amount <= 0) return;
-	data.spendings.unshift(item);
-	setMonthData(monthKey, data);
-	closeModal('spendings-modal');
-	$('#spendings-form').reset();
-	renderAll();
-	toast('Expense added');
+    list.innerHTML = state.earnings.map(e => `
+        <div class="list-item">
+            <div class="item-icon" style="background: rgba(16, 172, 132, 0.2); color: #10ac84;">
+                ${getCategoryEmoji('Earnings')}
+            </div>
+            <div class="item-details">
+                <div class="item-title">${escapeHtml(e.source)}</div>
+                <div class="item-date">${formatDate(e.date)}</div>
+                ${e.notes ? `<div class="item-notes">${escapeHtml(e.notes)}</div>` : ''}
+            </div>
+            <div style="display: flex; align-items: center; gap: 15px;">
+                <div class="item-amount positive">+${formatCurrency(e.amount)}</div>
+                <button class="delete-btn" onclick="deleteEarning('${e.id}')" title="Delete string">×</button>
+            </div>
+        </div>
+    `).join('');
 }
 
 function renderSpendingsList() {
-	const list = $('#spendings-list');
-	const monthKey = localStorage.getItem(STORAGE_KEYS.currentMonthKey);
-	const data = getMonthData(monthKey);
-	if (!data.spendings.length) {
-		list.innerHTML = '<p style="opacity:.8">No spendings yet.</p>';
-		return;
-	}
-	list.innerHTML = data.spendings.map(s => `
-		<div class="spending-item" data-id="${s.id}">
-			<div class="item-info">
-				<h4>${escapeHtml(s.category)} · ${escapeHtml(s.description)}</h4>
-				<p>${escapeHtml(s.date)} ${s.notes ? '· ' + escapeHtml(s.notes) : ''}</p>
-			</div>
-			<div style="display:flex;align-items:center;gap:.5rem">
-				<div class="item-amount">-${formatCurrency(s.amount)}</div>
-				<button class="delete-btn" onclick="deleteSpending('${s.id}')">Delete</button>
-			</div>
-		</div>
-	`).join('');
+    const list = document.getElementById('spendings-list');
+    if (!list) return;
+
+    if (state.paginatedSpendings.length === 0) {
+        list.innerHTML = `<div class="empty-state">No spendings found. You are doing great!</div>`;
+        return;
+    }
+
+    list.innerHTML = state.paginatedSpendings.map(s => `
+        <div class="list-item">
+            <div class="item-icon" style="background: rgba(255, 107, 107, 0.2); color: #ff6b6b;">
+                ${getCategoryEmoji(s.category)}
+            </div>
+            <div class="item-details">
+                <div class="item-title">${escapeHtml(s.description)}</div>
+                <div class="item-category">${s.category}</div>
+                <div class="item-date">${formatDate(s.date)}</div>
+                ${s.notes ? `<div class="item-notes">${escapeHtml(s.notes)}</div>` : ''}
+            </div>
+            <div style="display: flex; align-items: center; gap: 15px;">
+                <div class="item-amount negative">-${formatCurrency(s.amount)}</div>
+                <button class="delete-btn" onclick="deleteSpending('${s.id}')" title="Delete log">×</button>
+            </div>
+        </div>
+    `).join('');
 }
 
-window.deleteSpending = function deleteSpending(id) {
-	const monthKey = localStorage.getItem(STORAGE_KEYS.currentMonthKey);
-	const data = getMonthData(monthKey);
-	data.spendings = data.spendings.filter(s => s.id !== id);
-	setMonthData(monthKey, data);
-	renderAll();
-	toast('Expense removed');
-};
-
-// Balance and totals
-function renderTotals() {
-	const monthKey = localStorage.getItem(STORAGE_KEYS.currentMonthKey);
-	const data = getMonthData(monthKey);
-	const totals = computeTotals(data);
-	$('#total-earnings').textContent = formatCurrency(totals.earnings);
-	$('#total-spendings').textContent = formatCurrency(totals.spendings);
-	$('#current-balance').textContent = formatCurrency(totals.balance);
+function getCategoryEmoji(category) {
+    const map = {
+        'Food': '🍔', 'Transport': '🚗', 'Travel': '🚗', 'Shopping': '🛍️', 
+        'Entertainment': '🎬', 'Health': '⚕️', 'Home': '🏠',
+        'Bills': '🧾', 'Education': '📚', 'Other': '📝', 'Earnings': '💰'
+    };
+    return map[category] || '📦';
 }
 
-// Insights
-function initFilters() {
-	$all('.filter-btn').forEach(btn => {
-		btn.addEventListener('click', () => {
-			$all('.filter-btn').forEach(b => b.classList.remove('active'));
-			btn.classList.add('active');
-			renderInsights(Number(btn.dataset.period));
-		});
-	});
+function updateBalanceAndInsights() {
+    const totalEarnings = state.earnings.reduce((sum, e) => sum + e.amount, 0);
+    const totalSpendings = state.spendings.reduce((sum, s) => sum + s.amount, 0);
+    const balance = totalEarnings - totalSpendings;
+
+    document.getElementById('total-earnings').innerText = formatCurrency(totalEarnings);
+    document.getElementById('total-spendings').innerText = formatCurrency(totalSpendings);
+    
+    const balanceEl = document.getElementById('current-balance');
+    balanceEl.innerText = formatCurrency(balance);
+    if (balance < 0) balanceEl.style.color = '#ff6b6b';
+    else balanceEl.style.color = '#00d2d3';
+    
+    const healthScore = totalEarnings > 0 ? Math.max(0, Math.round((balance / totalEarnings) * 100)) : 0;
+
+    updateInsights(30, healthScore);
 }
 
-function renderInsights(days = 7) {
-	const monthKey = localStorage.getItem(STORAGE_KEYS.currentMonthKey);
-	const data = getMonthData(monthKey);
-	const earnings = filterByDays(data.earnings, days);
-	const spendings = filterByDays(data.spendings, days);
-	const eSum = earnings.reduce((s, e) => s + parseAmount(e.amount), 0);
-	const sSum = spendings.reduce((s, e) => s + parseAmount(e.amount), 0);
-	const warningBox = $('#warning-box');
-	if (sSum > eSum) {
-		$('#warning-message').textContent = `Your spending ${formatCurrency(sSum)} exceeds earnings ${formatCurrency(eSum)} in the last ${days} days.`;
-		const list = $('#saving-tips-list');
-		list.innerHTML = SAVING_TIPS.map(t => `<li>${escapeHtml(t)}</li>`).join('');
-		warningBox.style.display = 'block';
-	} else {
-		warningBox.style.display = 'none';
-	}
+function updateInsights(days, score = 0) {
+    const cutoff = new Date();
+    cutoff.setDate(cutoff.getDate() - days);
+    const periodSpendings = state.spendings.filter(s => new Date(s.date) >= cutoff);
+    const catTotals = {};
+    periodSpendings.forEach(s => {
+        catTotals[s.category] = (catTotals[s.category] || 0) + s.amount;
+    });
+
+    let topCats = Object.entries(catTotals).sort((a,b) => b[1] - a[1]);
+    
+    const insightsHtml = `
+        <div class="glass-card">
+            <h3>Top Spending Category <small style="font-size:12px;opacity:0.6">(Last ${days} days)</small></h3>
+            <p style="font-size: 24px; font-weight: 600; color: #ff9ff3;">${topCats.length > 0 ? escapeHtml(topCats[0][0]) : 'N/A'}</p>
+            <p>${topCats.length > 0 ? formatCurrency(topCats[0][1]) : formatCurrency(0)}</p>
+        </div>
+        <div class="glass-card text-center" style="background: linear-gradient(135deg, rgba(16, 172, 132, 0.2), rgba(0, 210, 211, 0.2)); border-color: rgba(16, 172, 132, 0.3);">
+            <h3 style="color: #00d2d3;">Saving Goal Rate</h3>
+            <p style="font-size: 32px; font-weight: bold; margin: 10px 0;">${score}%</p>
+            <p style="font-size: 14px; opacity: 0.8;">of total earnings saved</p>
+        </div>
+    `;
+    document.querySelector('.insights-content').innerHTML = insightsHtml;
 }
 
-// Charts
+// --- CHARTS ---
+let pieChartInstance = null;
+let lineChartInstance = null;
+
 function renderCharts() {
-	const monthKey = localStorage.getItem(STORAGE_KEYS.currentMonthKey);
-	const data = getMonthData(monthKey);
-	// Pie chart for spendings by category
-	const byCategory = data.spendings.reduce((acc, s) => {
-		acc[s.category] = (acc[s.category] || 0) + parseAmount(s.amount);
-		return acc;
-	}, {});
-	const pieCtx = document.getElementById('spending-pie-chart').getContext('2d');
-	if (spendingPieChart) spendingPieChart.destroy();
-	spendingPieChart = new Chart(pieCtx, {
-		type: 'pie',
-		data: {
-			labels: Object.keys(byCategory),
-			datasets: [{
-				data: Object.values(byCategory),
-				backgroundColor: [
-					'#ff6b6b', '#ffa36c', '#ffd93d', '#6c5ce7', '#00d2d3', '#54a0ff', '#10ac84'
-				],
-				borderWidth: 0
-			}]
-		},
-		options: {
-			plugins: { legend: { labels: { color: '#fff' } } }
-		}
-	});
+    const catTotals = {};
+    state.spendings.forEach(s => { catTotals[s.category] = (catTotals[s.category] || 0) + s.amount; });
 
-	// Line chart for balance trend across months (history + current)
-	const history = getHistory();
-	const monthsBack = [...history].slice(0, 11).reverse();
-	const currentTotals = computeTotals(data);
-	const series = monthsBack.map(h => ({ label: h.monthKey, value: h.totals.balance }))
-		.concat([{ label: monthKey, value: currentTotals.balance }]);
-	const lineCtx = document.getElementById('balance-line-chart').getContext('2d');
-	if (balanceLineChart) balanceLineChart.destroy();
-	balanceLineChart = new Chart(lineCtx, {
-		type: 'line',
-		data: {
-			labels: series.map(s => s.label),
-			datasets: [{
-				label: 'Balance',
-				data: series.map(s => s.value),
-				borderColor: '#4ecdc4',
-				backgroundColor: 'rgba(78, 205, 196, 0.2)',
-				tension: 0.3,
-				fill: true
-			}]
-		},
-		options: {
-			scales: {
-				x: { ticks: { color: '#fff' }, grid: { color: 'rgba(255,255,255,.1)' } },
-				y: { ticks: { color: '#fff' }, grid: { color: 'rgba(255,255,255,.1)' } }
-			},
-			plugins: { legend: { labels: { color: '#fff' } } }
-		}
-	});
+    const pieCtx = document.getElementById('spending-pie-chart').getContext('2d');
+    if (pieChartInstance) pieChartInstance.destroy();
+
+    Chart.defaults.color = 'rgba(255, 255, 255, 0.7)';
+    Chart.defaults.font.family = "'Poppins', sans-serif";
+
+    pieChartInstance = new Chart(pieCtx, {
+        type: 'doughnut',
+        data: {
+            labels: Object.keys(catTotals),
+            datasets: [{
+                data: Object.values(catTotals),
+                backgroundColor: ['#ff9ff3', '#feca57', '#ff6b6b', '#48dbfb', '#1dd1a1', '#5f27cd', '#c8d6e5'],
+                borderWidth: 0,
+                hoverOffset: 10
+            }]
+        },
+        options: { responsive: true, cutout: '70%', plugins: { legend: { position: 'right' } } }
+    });
+
+    const dateTotals = {};
+    state.spendings.forEach(s => {
+        const d = new Date(s.date).toISOString().split('T')[0];
+        dateTotals[d] = (dateTotals[d] || 0) + s.amount;
+    });
+
+    const dates = Object.keys(dateTotals).sort();
+    const amounts = dates.map(d => dateTotals[d]);
+
+    const lineCtx = document.getElementById('balance-line-chart').getContext('2d');
+    if (lineChartInstance) lineChartInstance.destroy();
+
+    lineChartInstance = new Chart(lineCtx, {
+        type: 'line',
+        data: {
+            labels: dates,
+            datasets: [{
+                label: 'Daily Spending',
+                data: amounts,
+                borderColor: '#00d2d3',
+                backgroundColor: 'rgba(0, 210, 211, 0.1)',
+                borderWidth: 3,
+                tension: 0.4,
+                fill: true,
+                pointBackgroundColor: '#fff',
+                pointRadius: 4
+            }]
+        },
+        options: { responsive: true, scales: { y: { beginAtZero: true, grid: { color: 'rgba(255,255,255,0.05)' } }, x: { grid: { display: false } } }, plugins: { legend: { display: false } } }
+    });
 }
 
-// History
-function renderHistory() {
-	const container = $('#history-list');
-	const history = getHistory();
-	if (!history.length) {
-		container.innerHTML = '<p style="opacity:.8">No history yet. Reset at month start to archive.</p>';
-		return;
-	}
-	container.innerHTML = history.map(h => {
-		return `
-			<div class="history-item">
-				<div class="item-info">
-					<h4>${escapeHtml(h.monthKey)}</h4>
-					<p>Earnings: ${formatCurrency(h.totals.earnings)} · Spendings: ${formatCurrency(h.totals.spendings)}</p>
-				</div>
-				<div class="item-amount">${formatCurrency(h.totals.balance)}</div>
-			</div>
-		`;
-	}).join('');
-}
+// --- AI CHATBOT LOGIC ---
+window.toggleChat = function() {
+    const chatWindow = document.getElementById('ai-chat-window');
+    chatWindow.classList.toggle('hidden');
+    if (!chatWindow.classList.contains('hidden')) {
+        document.getElementById('chat-input').focus();
+    }
+};
+window.handleChatKeyPress = function(e) { if (e.key === 'Enter') sendChatMessage(); };
 
-window.resetCurrentMonth = function resetCurrentMonth() {
-	const monthKey = localStorage.getItem(STORAGE_KEYS.currentMonthKey);
-	const data = getMonthData(monthKey);
-	if (!data.earnings.length && !data.spendings.length) {
-		toast('Nothing to archive');
-		return;
-	}
-	const totals = computeTotals(data);
-	const history = getHistory();
-	history.unshift({ monthKey, totals, earnings: data.earnings, spendings: data.spendings });
-	setHistory(history);
-	setMonthData(monthKey, { earnings: [], spendings: [], createdAt: new Date().toISOString() });
-	renderAll();
-	renderHistory();
-	renderCharts();
-	toast('Current month reset and archived');
+window.sendChatMessage = async function() {
+    const input = document.getElementById('chat-input');
+    const message = input.value.trim();
+    if (!message) return;
+
+    appendMessage(message, 'user-message');
+    input.value = '';
+
+    const typingIndicator = appendTypingIndicator();
+    try {
+        const res = await fetch(`${API_BASE}/chat`, {
+            method: 'POST',
+            headers: getAuthHeaders(),
+            body: JSON.stringify({ message })
+        });
+        const data = await res.json();
+        typingIndicator.remove();
+        if (res.ok) appendMessage(data.reply, 'ai-message');
+        else appendMessage('Error connecting to Gemini. Please try again.', 'ai-message');
+    } catch (err) {
+        typingIndicator.remove();
+        appendMessage('Network error. Is the server running?', 'ai-message');
+    }
 };
 
-// Modals
-function openModal(id) {
-	const el = document.getElementById(id);
-	if (el) el.style.display = 'block';
+function appendMessage(text, className) {
+    const body = document.getElementById('chat-body');
+    const msgDiv = document.createElement('div');
+    msgDiv.className = `message ${className}`;
+    msgDiv.innerHTML = escapeHtml(text).replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>').replace(/\n/g, '<br>');
+    body.appendChild(msgDiv);
+    body.scrollTop = body.scrollHeight;
+}
+function appendTypingIndicator() {
+    const body = document.getElementById('chat-body');
+    const msgDiv = document.createElement('div');
+    msgDiv.className = 'message ai-message typing';
+    msgDiv.innerHTML = '<div class="dot"></div><div class="dot"></div><div class="dot"></div>';
+    body.appendChild(msgDiv);
+    body.scrollTop = body.scrollHeight;
+    return msgDiv;
 }
 
-window.closeModal = function closeModal(id) {
-	const el = document.getElementById(id);
-	if (el) el.style.display = 'none';
-};
+// --- MODALS & TABS ---
+function showAddEarningsModal() { openModal('earnings-modal'); }
+function showAddSpendingsModal() { openModal('spendings-modal'); }
+function openModal(id) { document.getElementById(id).classList.add('active'); }
+function closeModal(id) { document.getElementById(id).classList.remove('active'); }
 
-function initModalCloseHandlers() {
-	window.addEventListener('click', (e) => {
-		if (e.target.classList.contains('modal')) {
-			e.target.style.display = 'none';
-		}
-	});
+window.onclick = function(event) {
+    if (event.target.classList.contains('modal')) event.target.classList.remove('active');
 }
 
-// Toast (lightweight)
-function toast(message) {
-	const t = document.createElement('div');
-	t.textContent = message;
-	t.style.position = 'fixed';
-	t.style.bottom = '20px';
-	t.style.left = '50%';
-	t.style.transform = 'translateX(-50%)';
-	t.style.background = 'rgba(0,0,0,.8)';
-	t.style.color = '#fff';
-	t.style.padding = '10px 16px';
-	t.style.borderRadius = '8px';
-	t.style.zIndex = '2000';
-	document.body.appendChild(t);
-	setTimeout(() => { t.style.opacity = '0'; t.style.transition = 'opacity .3s'; }, 1600);
-	setTimeout(() => t.remove(), 2000);
-}
-
-// Rotating quotes and daily tip
-function startQuotesRotation() {
-	const el = document.getElementById('rotating-quote');
-	if (!el) return;
-	let idx = 0;
-	setInterval(() => {
-		idx = (idx + 1) % QUOTES.length;
-		el.textContent = QUOTES[idx];
-	}, 4000);
-}
-
-function setDailyTip() {
-	const el = document.getElementById('daily-tip');
-	if (!el) return;
-	const dayIndex = Math.floor(Date.now() / (1000 * 60 * 60 * 24)) % DAILY_TIPS.length;
-	el.textContent = DAILY_TIPS[dayIndex];
-}
-
-// Custom cursor
-function initCustomCursor() {
-	const cursor = document.querySelector('.custom-cursor');
-	if (!cursor) return;
-	document.addEventListener('mousemove', (e) => {
-		cursor.style.transform = `translate(${e.clientX - 10}px, ${e.clientY - 10}px)`;
-	});
-	['a','button','.nav-tab','.add-btn','.save-user-btn','.delete-btn'].forEach(sel => {
-		$all(sel).forEach(el => {
-			el.addEventListener('mouseenter', () => { cursor.style.transform += ' scale(1.6)'; });
-			el.addEventListener('mouseleave', () => { cursor.style.transform = cursor.style.transform.replace(' scale(1.6)',''); });
-		});
-	});
-}
-
-// Security helper
-function escapeHtml(str) {
-	return String(str)
-		.replace(/&/g, '&amp;')
-		.replace(/</g, '&lt;')
-		.replace(/>/g, '&gt;')
-		.replace(/"/g, '&quot;')
-		.replace(/'/g, '&#039;');
-}
-
-// Render all sections
-function renderAll() {
-	renderEarningsList();
-	renderSpendingsList();
-	renderTotals();
-	renderInsights(Number(document.querySelector('.filter-btn.active')?.dataset.period || 7));
-	renderHistory();
+// --- HISTORY RESET ---
+function resetCurrentMonth() {
+    if (!confirm('Are you sure you want to reset all data for the current month? This cannot be undone.')) return;
+    const now = new Date();
+    const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
+    const monthSpendings = state.spendings.filter(s => new Date(s.date) >= startOfMonth);
+    const monthEarnings = state.earnings.filter(e => new Date(e.date) >= startOfMonth);
+    Promise.all([
+        ...monthSpendings.map(s => fetch(`${API_BASE}/spendings/${s.id}`, { method: 'DELETE', headers: getAuthHeaders() })),
+        ...monthEarnings.map(e => fetch(`${API_BASE}/earnings/${e.id}`, { method: 'DELETE', headers: getAuthHeaders() }))
+    ]).then(() => fetchAllData()).catch(err => console.error('Reset error:', err));
 }
 
 // Init
-function init() {
-	ensureMonthInitialized();
-	initTabs();
-	loadUserDetails();
-	initFilters();
-	initModalCloseHandlers();
-	startQuotesRotation();
-	setDailyTip();
-	initCustomCursor();
-	// Listeners
-	const earningsForm = document.getElementById('earnings-form');
-	if (earningsForm) earningsForm.addEventListener('submit', onSubmitEarnings);
-	const spendingsForm = document.getElementById('spendings-form');
-	if (spendingsForm) spendingsForm.addEventListener('submit', onSubmitSpendings);
-	// First render
-	renderAll();
-	// Preload charts for smoother first view
-	renderCharts();
-}
+document.addEventListener('DOMContentLoaded', () => {
+    // Nav tabs
+    document.querySelectorAll('.nav-tab').forEach(tab => {
+        tab.addEventListener('click', () => {
+            document.querySelectorAll('.nav-tab').forEach(t => t.classList.remove('active'));
+            document.querySelectorAll('.tab-pane').forEach(p => p.classList.remove('active'));
+            tab.classList.add('active');
+            document.getElementById(`${tab.dataset.tab}-tab`).classList.add('active');
+        });
+    });
 
-document.addEventListener('DOMContentLoaded', init);
+    // Insights filter buttons
+    document.querySelectorAll('.filter-btn').forEach(btn => {
+        btn.addEventListener('click', () => {
+            document.querySelectorAll('.filter-btn').forEach(b => b.classList.remove('active'));
+            btn.classList.add('active');
+            const days = parseInt(btn.dataset.period, 10);
+            const totalEarnings = state.earnings.reduce((sum, e) => sum + e.amount, 0);
+            const totalSpendings = state.spendings.reduce((sum, s) => sum + s.amount, 0);
+            const balance = totalEarnings - totalSpendings;
+            const healthScore = totalEarnings > 0 ? Math.max(0, Math.round((balance / totalEarnings) * 100)) : 0;
+            updateInsights(days, healthScore);
+        });
+    });
+
+    // Form submissions
+    document.getElementById('earnings-form').addEventListener('submit', onSubmitEarnings);
+    document.getElementById('spendings-form').addEventListener('submit', onSubmitSpendings);
+
+    checkAuth();
+});

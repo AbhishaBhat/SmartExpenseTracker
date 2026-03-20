@@ -8,6 +8,7 @@
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@300;400;500;600;700&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="styles.css">
+    <link rel="stylesheet" href="chat.css">
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
 </head>
 <body>
@@ -43,6 +44,32 @@
         </div>
     </div>
 
+    <!-- Auth Page -->
+    <div id="auth-page" class="page" style="align-items: center; justify-content: center; min-height: 100vh;">
+        <div class="user-form" style="width: 100%; max-width: 400px; padding: 40px; border-radius: 20px; background: rgba(20, 20, 30, 0.85); border: 1px solid rgba(255, 255, 255, 0.1);">
+            <div style="text-align: center; margin-bottom: 25px;">
+                <h2 id="auth-title" style="color: white; margin-bottom: 5px;">Welcome Back</h2>
+                <p style="color: rgba(255,255,255,0.6); font-size: 14px;">Sign in to sync your expenses</p>
+            </div>
+            <form id="auth-form" onsubmit="handleAuth(event)">
+                <div class="form-group" id="name-group" style="display: none;">
+                    <input type="text" id="auth-name" placeholder="Full Name">
+                </div>
+                <div class="form-group">
+                    <input type="email" id="auth-email" required placeholder="Email Address">
+                </div>
+                <div class="form-group">
+                    <input type="password" id="auth-password" required placeholder="Password">
+                </div>
+                <button type="submit" class="save-user-btn" style="width: 100%; margin-top: 10px;" id="auth-btn">Log In</button>
+            </form>
+            <p style="text-align: center; margin-top: 20px; font-size: 14px; color: rgba(255,255,255,0.7);">
+                <span id="auth-toggle-text">Don't have an account?</span> 
+                <a href="#" onclick="toggleAuthMode()" style="color: #6c5ce7; font-weight: bold; text-decoration: none;">Sign up</a>
+            </p>
+        </div>
+    </div>
+
     <!-- Home Dashboard -->
     <div id="dashboard-page" class="page">
         <header class="dashboard-header" id="top-of-dashboard">
@@ -61,7 +88,10 @@
 
         <!-- User Details Section -->
         <section class="user-details-section">
-            <h2>Personal Information</h2>
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px;">
+                <h2 style="margin: 0;">Personal Information</h2>
+                <button class="save-user-btn" style="background: linear-gradient(135deg, #ff4757, #ff6b81); padding: 8px 15px; margin: 0; min-width: auto; box-shadow: 0 4px 15px rgba(255, 71, 87, 0.3);" onclick="logout()">Logout</button>
+            </div>
             <div class="user-form">
                 <div class="form-group">
                     <input type="text" id="user-name" placeholder="Full Name" required>
@@ -104,11 +134,34 @@
             <!-- Spendings Tab -->
             <div id="spendings-tab" class="tab-pane">
                 <div class="tab-header">
-                    <h2>Add Expenses</h2>
+                    <h2>Recent Spendings</h2>
                     <button class="add-btn" onclick="showAddSpendingsModal()">+ Add Expense</button>
                 </div>
+
+                <!-- NEW: Filters -->
+                <div style="display: flex; gap: 10px; margin-bottom: 15px;">
+                    <input type="text" id="search-spendings" placeholder="Search descriptions..." onkeyup="debouncedSearch()" style="flex: 1; padding: 10px 15px; border-radius: 8px; background: rgba(255,255,255,0.05); border: 1px solid rgba(255,255,255,0.2); color: white; outline: none; font-family: inherit;">
+                    <select id="filter-category" onchange="fetchSpendings(1)" style="padding: 10px 15px; border-radius: 8px; background: rgba(20,20,30,0.9); border: 1px solid rgba(255,255,255,0.2); color: white; outline: none; font-family: inherit;">
+                        <option value="">All Categories</option>
+                        <option value="Food">Food & Dining</option>
+                        <option value="Transport">Transportation</option>
+                        <option value="Shopping">Shopping</option>
+                        <option value="Entertainment">Entertainment</option>
+                        <option value="Health">Health & Fitness</option>
+                        <option value="Home">Home & Utilities</option>
+                        <option value="Other">Other</option>
+                    </select>
+                </div>
+
                 <div class="spendings-list" id="spendings-list">
                     <!-- Spendings will be populated here -->
+                </div>
+
+                <!-- NEW: Pagination -->
+                <div style="display: flex; justify-content: space-between; align-items: center; margin-top: 15px; padding: 10px; border-radius: 12px;">
+                    <button class="add-btn" id="prev-btn" onclick="changePage(-1)" style="padding: 6px 15px; opacity: 0.5;" disabled>&laquo; Prev</button>
+                    <span id="page-info" style="color: rgba(255,255,255,0.8); font-size: 14px; font-weight: 500;">Page 1 of 1</span>
+                    <button class="add-btn" id="next-btn" onclick="changePage(1)" style="padding: 6px 15px; opacity: 0.5;" disabled>Next &raquo;</button>
                 </div>
             </div>
 
@@ -147,8 +200,8 @@
                 <div class="insights-header">
                     <h2>Smart Insights</h2>
                     <div class="filter-controls">
-                        <button class="filter-btn active" data-period="7">Last 7 Days</button>
-                        <button class="filter-btn" data-period="30">Last Month</button>
+                        <button class="filter-btn" data-period="7">Last 7 Days</button>
+                        <button class="filter-btn active" data-period="30">Last Month</button>
                         <button class="filter-btn" data-period="60">Last 2 Months</button>
                     </div>
                 </div>
@@ -250,6 +303,37 @@
                 </div>
                 <button type="submit" class="submit-btn">Add Expense</button>
             </form>
+        </div>
+    </div>
+
+    <!-- AI Advisor Chatbot -->
+    <div id="ai-chat-widget">
+        <!-- Chat Toggle Button -->
+        <button id="ai-chat-toggle" onclick="toggleChat()" title="Ask AI Advisor">
+            <span class="ai-icon">✨</span>
+        </button>
+
+        <!-- Chat Window -->
+        <div id="ai-chat-window" class="hidden">
+            <div class="chat-header">
+                <h3>AI Financial Advisor</h3>
+                <button class="close-chat" onclick="toggleChat()">&times;</button>
+            </div>
+            <div class="chat-body" id="chat-body">
+                <div class="message ai-message">
+                    Hello! I'm your AI Financial Advisor powered by Gemini. How can I help you optimize your expenses based on your data?
+                </div>
+            </div>
+            <div class="chat-footer">
+                <div class="chat-input-wrapper">
+                    <input type="text" id="chat-input" placeholder="Ask a financial question..." onkeypress="handleChatKeyPress(event)">
+                    <button id="send-chat" onclick="sendChatMessage()">
+                        <svg viewBox="0 0 24 24" width="20" height="20" fill="currentColor">
+                            <path d="M2.01 21L23 12 2.01 3 2 10l15 2-15 2z"></path>
+                        </svg>
+                    </button>
+                </div>
+            </div>
         </div>
     </div>
 
